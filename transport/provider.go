@@ -53,7 +53,7 @@ func (s *ProviderTransport) Send(msg actor.Message) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	natsBody, err := msgpack.Marshal(invocation) // todo fix
+	natsBody, err := msgpack.Marshal(invocation)
 	// NC Request
 	subj := fmt.Sprintf("wasmbus.rpc.%s.%s", s.HostData.LatticeRPCPrefix, s.LD.ActorID)
 	res, err := s.NatsConnection.Request(subj, natsBody, 5*time.Second)

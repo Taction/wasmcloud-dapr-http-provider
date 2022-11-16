@@ -5,13 +5,14 @@
  */
 package config
 
-//var (
-//	Zone   = "huawei-shanghai-105"
-//	Region = "s105"
-//  Env    = "release"
-//)
 var (
-	Zone   = "sh001"
-	Region = "sh"
-	Env    = "dev"
+	Zone   = "huawei-shanghai-105"
+	Region = "s105"
+	Env    = "release"
 )
+
+//var (
+//	Zone   = "sh001"
+//	Region = "sh"
+//	Env    = "dev"
+//)

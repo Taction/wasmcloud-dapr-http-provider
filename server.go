@@ -3,16 +3,19 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	logos "log"
 	"net/http"
 	"time"
 
 	provider "github.com/jordan-rash/wasmcloud-provider"
-	"github.com/vmihailenco/msgpack/v5"
+	commonmsgpack "github.com/vmihailenco/msgpack/v5"
 	"github.com/wasmcloud/actor-tinygo"
 	httpserver "github.com/wasmcloud/interfaces/httpserver/tinygo"
+	msgpack "github.com/wasmcloud/tinygo-msgpack"
 
+	"github.com/taction/http-provider-go/encode"
 	"github.com/taction/http-provider-go/log"
 	"github.com/taction/http-provider-go/transport"
 )
@@ -61,7 +64,7 @@ func (h *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Log.Infof("Sending request to actor with request: %+v", req)
 	logos.Printf("Sending request to actor with request: %+v\n", req)
-	body, err := msgpack.Marshal(req)
+	body, err := encode.Encode(req)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -72,16 +75,32 @@ func (h *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := httpserver.HttpResponse{}
-	err = msgpack.Unmarshal(res, &resp)
+	b := msgpack.NewDecoder(res)
+	resp, err = httpserver.MDecodeHttpResponse(&b)
+	//err = msgpack.Unmarshal(res, &resp)
 	if err != nil {
 		h.handleError(w, err)
 		return
 	}
-	for k, v := range resp.Header {
-		w.Header().Set(k, v[0])
+	if len(resp.Header) > 0 {
+		for k, v := range resp.Header {
+			w.Header().Set(k, v[0])
+		}
 	}
 	w.WriteHeader(int(resp.StatusCode))
-	w.Write(resp.Body)
+	// try transfer msgpack to json
+	var v map[string]interface{}
+	err = commonmsgpack.Unmarshal(resp.Body, &v)
+	if err != nil {
+		w.Write(resp.Body)
+		return
+	}
+	j, err := json.Marshal(v)
+	if err != nil {
+		w.Write(resp.Body)
+		return
+	}
+	w.Write(j)
 }
 
 func (h *HttpServer) handleError(w http.ResponseWriter, err error) {
