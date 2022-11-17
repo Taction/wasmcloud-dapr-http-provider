@@ -1,0 +1,14 @@
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: appconfig
+spec:
+  nameResolution:
+    component: "consul"
+    configuration:
+      client:
+          address: "http://127.0.0.1:8500"
+      selfRegister: true
+      queryOptions:
+        useCache: true
+      daprPortMetaKey: "DAPR_PORT"
