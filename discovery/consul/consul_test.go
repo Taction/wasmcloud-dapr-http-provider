@@ -82,6 +82,11 @@ func (m *mockAgent) ServiceRegister(service *consul.AgentServiceRegistration) er
 	return m.serviceRegisterErr
 }
 
+func (m *mockAgent) ServiceDeregister(id string) error {
+
+	return nil
+}
+
 func TestInit(t *testing.T) {
 	t.Parallel()
 

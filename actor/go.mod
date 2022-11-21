@@ -11,3 +11,4 @@ require (
 	github.com/wasmcloud/actor-tinygo v0.1.3 // indirect
 	github.com/wasmcloud/tinygo-cbor v0.1.0 // indirect
 )
+replace github.com/wasmcloud/interfaces/httpserver/tinygo => /Users/zc/Desktop/companyWorkspace/zhongtai/github/webassembly/wasmcloud/interfaces/httpserver/tinygo

@@ -4,17 +4,27 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"runtime"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/dapr/components-contrib/nameresolution"
+	invokev1 "github.com/dapr/dapr/pkg/messaging/v1"
+	"github.com/dapr/dapr/pkg/modes"
+	internalv1pb "github.com/dapr/dapr/pkg/proto/internals/v1"
 	"github.com/dapr/kit/logger"
 	provider "github.com/jordan-rash/wasmcloud-provider"
 	httpserver "github.com/wasmcloud/interfaces/httpserver/tinygo"
 	msgpack "github.com/wasmcloud/tinygo-msgpack"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/taction/http-provider-go/discovery"
 	"github.com/taction/http-provider-go/discovery/consul"
@@ -23,19 +33,34 @@ import (
 	"github.com/taction/http-provider-go/transport"
 )
 
+const (
+	// needed to load balance requests for target services with multiple endpoints, ie. multiple instances.
+	grpcServiceConfig = `{"loadBalancingPolicy":"round_robin"}`
+	dialTimeout       = time.Second * 30
+	daprAppID         = "dapr-app-id"
+)
+
 var log = logger.NewLogger("wasmcloud.httpprovider")
 
 type HttpServerProvider struct {
-	l            sync.Mutex
-	ExternalHost string
-	Actors       map[string]server.HttpServerInterface
-	Provider     provider.WasmcloudProvider
-	Resolver     discovery.Discover // todo change ResolveID to `ResolveID(req ResolveRequest) ([]string, error)`
+	l              sync.Mutex
+	lock           sync.RWMutex
+	connectionPool *connectionPool
+	ExternalHost   string
+	Actors         map[string]server.HttpServerInterface
+	Provider       provider.WasmcloudProvider
+	Resolver       discovery.Discover // todo change ResolveID to `ResolveID(req ResolveRequest) ([]string, error)`
+}
+type remoteApp struct {
+	id        string
+	namespace string
+	address   string
 }
 
 func NewHttpServerProvider() *HttpServerProvider {
 	return &HttpServerProvider{
-		Actors: make(map[string]server.HttpServerInterface),
+		Actors:         make(map[string]server.HttpServerInterface),
+		connectionPool: newConnectionPool(),
 	}
 }
 
@@ -70,7 +95,7 @@ func (p *HttpServerProvider) Run() (err error) {
 	go func() {
 		//Wait for valid requests
 		for actorRequest := range p.Provider.ProviderAction {
-			go evaluateRequest(actorRequest)
+			go p.evaluateRequest(actorRequest)
 		}
 	}()
 
@@ -98,7 +123,7 @@ func (p *HttpServerProvider) initDiscovery() (err error) {
 	log.Debugf("init discovery with config: %+v\n", c)
 	resolver := consul.NewResolver(log)
 	err = resolver.Init(nameresolution.Metadata{
-		Configuration: consul.IntermediateConfig{Client: &consul.Config{Address: c.ResolverAddress}},
+		Configuration: consul.IntermediateConfig{Client: &consul.Config{Address: c.ResolverAddress}, DaprPortMetaKey: nameresolution.DaprPort},
 	})
 	if err != nil {
 		return err
@@ -109,10 +134,10 @@ func (p *HttpServerProvider) initDiscovery() (err error) {
 }
 
 // send request to outside
-func evaluateRequest(actorRequest provider.ProviderAction) error {
+func (p *HttpServerProvider) evaluateRequest(actorRequest provider.ProviderAction) {
 	log.Debugf("receive actor request operation: %s\n", actorRequest.Operation)
 	resp := provider.ProviderResponse{}
-	buf, err := doRequest(actorRequest)
+	buf, err := p.daprRequest(actorRequest)
 	if err != nil {
 		resp.Error = err.Error()
 	} else {
@@ -120,7 +145,163 @@ func evaluateRequest(actorRequest provider.ProviderAction) error {
 	}
 	// Send response
 	actorRequest.Respond <- resp
-	return nil
+}
+
+func (p *HttpServerProvider) daprRequest(actorRequest provider.ProviderAction) ([]byte, error) {
+	operationL := strings.Split(actorRequest.Operation, ".")
+	switch operationL[len(operationL)-1] {
+	case "HandleRequest":
+		// Decode the request from actor
+		dec := msgpack.NewDecoder(actorRequest.Msg)
+		req, err := httpserver.MDecodeHttpRequest(&dec)
+		if err != nil {
+			return nil, err
+		}
+		pres, err := p.callDaprRemote(context.TODO(), req)
+		var sizer msgpack.Sizer
+		sizeEnc := &sizer
+		pres.MEncode(sizeEnc)
+		buf := make([]byte, sizer.Len())
+		encoder := msgpack.NewEncoder(buf)
+		enc := &encoder
+		pres.MEncode(enc)
+		return buf, nil
+	default:
+		log.Errorf("unknown operation: %s\n", actorRequest.Operation)
+		return nil, errors.New("Invalid Operation")
+	}
+}
+
+func (g *HttpServerProvider) callDaprRemote(ctx context.Context, r httpserver.HttpRequest) (*httpserver.HttpResponse, error) {
+	log.Debugf("actor call provider req: %+v\n", r)
+	// todo check why header has empty string
+	mh := metadata.MD{}
+	if len(r.Header) > 0 {
+		for k, v := range r.Header {
+			for _, vv := range v {
+				if vv != "" {
+					mh.Append(k, vv)
+				}
+			}
+		}
+	}
+	appId := ""
+	if appIDs := mh[daprAppID]; len([]string(appIDs)) == 0 {
+		return nil, errors.New("dapr-app-id not found")
+	} else {
+		appId = appIDs[0]
+	}
+	contentType := ""
+	if len(mh) > 0 && len(mh["content-type"]) > 0 {
+		contentType = r.Header["content-type"][0]
+	}
+
+	invokeMethodName := r.Path
+	verb := strings.ToUpper(r.Method)
+	// Construct internal invoke method request
+	req := invokev1.NewInvokeMethodRequest(invokeMethodName).WithHTTPExtension(verb, r.QueryString)
+	req.WithRawData(r.Body, contentType)
+	// Save headers to internal metadata
+	req.WithMetadata(mh)
+
+	a, err := g.getRemoteApp(appId)
+	conn, err := g.GetGRPCConnection(context.TODO(), a.address)
+	if err != nil {
+		return nil, err
+	}
+	clientV1 := internalv1pb.NewServiceInvocationClient(conn)
+	var opts []grpc.CallOption
+	opts = append(opts, grpc.MaxCallRecvMsgSize(4*1024*1024), grpc.MaxCallSendMsgSize(4*1024*1024))
+
+	response, err := clientV1.CallLocal(ctx, req.Proto(), opts...)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := invokev1.InternalInvokeResponse(response)
+	if err != nil {
+		return nil, err
+	}
+	// Convert response to HTTPServer response
+	res := httpserver.HttpResponse{Header: map[string]httpserver.HeaderValues{}}
+	contentType, body := resp.RawData()
+	res.Header["content-type"] = []string{contentType}
+	statusCode := int(resp.Status().Code)
+	//statusCode = invokev1.HTTPStatusFromCode(codes.Code(statusCode))
+	//if statusCode != http.StatusOK {
+	//	var rErr error
+	//	if body, rErr = invokev1.ProtobufToJSON(resp.Status()); rErr != nil {
+	//		body = []byte(fmt.Sprintf("ERR_MALFORMED_RESPONSE %s", rErr.Error()))
+	//		statusCode = fasthttp.StatusInternalServerError
+	//	}
+	//}
+	res.Body = body
+	res.StatusCode = uint16(statusCode)
+	return &res, nil
+}
+
+func (d *HttpServerProvider) getRemoteApp(appID string) (remoteApp, error) {
+	//id, namespace, err := d.requestAppIDAndNamespace(appID)
+	//if err != nil {
+	//	return remoteApp{}, err
+	//}
+
+	request := nameresolution.ResolveRequest{ID: appID}
+	address, err := d.Resolver.ResolveID(request)
+	if err != nil {
+		return remoteApp{}, err
+	}
+
+	return remoteApp{
+		id:      appID,
+		address: address,
+	}, nil
+}
+
+func (g *HttpServerProvider) GetGRPCConnection(parentCtx context.Context, address string, customOpts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	g.lock.RLock()
+	if conn, ok := g.connectionPool.Share(address); ok {
+		g.lock.RUnlock()
+		return conn, nil
+	}
+	g.lock.RUnlock()
+
+	g.lock.RLock()
+	// read the value once again, as a concurrent writer could create it
+	if conn, ok := g.connectionPool.Share(address); ok {
+		g.lock.RUnlock()
+		return conn, nil
+	}
+	g.lock.RUnlock()
+	opts := []grpc.DialOption{
+		grpc.WithDefaultServiceConfig(grpcServiceConfig),
+		grpc.WithTransportCredentials(insecure.NewCredentials()), // todo fix tls or mtls usage
+	}
+	dialPrefix := GetDialAddressPrefix(modes.StandaloneMode) // todo define in config
+	ctx, cancel := context.WithTimeout(parentCtx, dialTimeout)
+	conn, err := grpc.DialContext(ctx, dialPrefix+address, opts...)
+	cancel()
+	if err != nil {
+		return nil, err
+	}
+	g.lock.Lock()
+	g.connectionPool.Register(address, conn)
+	g.lock.Unlock()
+	return conn, nil
+}
+
+// GetDialAddressPrefix returns a dial prefix for a gRPC client connections
+// For a given DaprMode.
+func GetDialAddressPrefix(mode modes.DaprMode) string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+
+	switch mode {
+	case modes.KubernetesMode:
+		return "dns:///"
+	default:
+		return ""
+	}
 }
 
 func doRequest(actorRequest provider.ProviderAction) ([]byte, error) {

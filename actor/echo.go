@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/wasmcloud/actor-tinygo"
 	httpserver "github.com/wasmcloud/interfaces/httpserver/tinygo"
-	msgpack "github.com/wasmcloud/tinygo-msgpack"
 )
 
 func main() {
@@ -14,21 +13,22 @@ func main() {
 type Echo struct{}
 
 func (e *Echo) HandleRequest(ctx *actor.Context, req httpserver.HttpRequest) (*httpserver.HttpResponse, error) {
-	return &httpserver.HttpResponse{
-		StatusCode: 200,
-		Header:     make(httpserver.HeaderMap, 0),
-		Body:       MEncodeRequest(req),
-	}, nil
+	provider := httpserver.NewProviderHttpServer()
+	req.Header["dapr-app-id"] = []string{"order-processor"} // todo clean req outside
+	req.Body = append([]byte(`{"Proxy": "by wasmcloud", "origin":`), req.Body...)
+	req.Body = append(req.Body, []byte(`}`)...)
+	res, err := provider.HandleRequest(ctx, req)
+	if err != nil {
+		return InternalServerError(err), nil
+	}
+	return res, nil
 
 }
 
-func MEncodeRequest(req httpserver.HttpRequest) []byte {
-	var sizer msgpack.Sizer
-	sizeEnc := &sizer
-	req.MEncode(sizeEnc)
-	buf := make([]byte, sizer.Len())
-	encoder := msgpack.NewEncoder(buf)
-	enc := &encoder
-	req.MEncode(enc)
-	return buf
+func InternalServerError(err error) *httpserver.HttpResponse {
+	return &httpserver.HttpResponse{
+		StatusCode: 500,
+		Header:     make(httpserver.HeaderMap, 0),
+		Body:       []byte(err.Error()),
+	}
 }

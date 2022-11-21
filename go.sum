@@ -312,8 +312,8 @@ github.com/stretchr/testify v1.7.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/
 github.com/stretchr/testify v1.7.2/go.mod h1:R6va5+xMeoiuVRoj+gSkQ7d3FALtqAAGI1FQKckRals=
 github.com/stretchr/testify v1.8.0 h1:pSgiaMZlXftHpm5L7V1+rVB+AZJydKsMxsQBIJw4PKk=
 github.com/stretchr/testify v1.8.0/go.mod h1:yNjHg4UonilssWZ8iaSj1OCr/vHnekPRkoO+kdMU+MU=
-github.com/taction/wasmcloud-provider v0.0.0-20221117060058-c4c7dbb96bac h1:ASyOcP0cLXRhb9Lux/BwYDIkt9nnVUAZ/Y5nv3D/4OU=
-github.com/taction/wasmcloud-provider v0.0.0-20221117060058-c4c7dbb96bac/go.mod h1:2GbLw5gQz9JHLaS/38VWybliAVNZ9NzEgkwmfz/ynZ4=
+github.com/taction/interfaces/httpserver/tinygo v0.0.0-20221121060656-c8eb9f44fca4 h1:xQddBNkbFnO4urgC9MMv7JEIk3WoASuXfhcJLYuW4ZI=
+github.com/taction/interfaces/httpserver/tinygo v0.0.0-20221121060656-c8eb9f44fca4/go.mod h1:bq8RbFWT/3ItPG1XFBQxAIkrnPyHsvtUSB0yRFNtPxE=
 github.com/tv42/httpunix v0.0.0-20150427012821-b75d8614f926/go.mod h1:9ESjWnEqriFuLhtthL60Sar/7RFoluCcXsuvEwTV5KM=
 github.com/valyala/bytebufferpool v1.0.0 h1:GqA5TC/0021Y/b9FG4Oi9Mr3q7XYx6KllzawFIhcdPw=
 github.com/valyala/bytebufferpool v1.0.0/go.mod h1:6bBcMArwyJ5K/AmCkWv1jt77kVWyCJ6HpOuEn7z0Csc=
@@ -326,8 +326,6 @@ github.com/vmihailenco/tagparser/v2 v2.0.0 h1:y09buUbR+b5aycVFQs/g70pqKVZNBmxwAh
 github.com/vmihailenco/tagparser/v2 v2.0.0/go.mod h1:Wri+At7QHww0WTrCBeu4J6bNtoV6mEfg5OIWRZA9qds=
 github.com/wasmcloud/actor-tinygo v0.1.3 h1:Ucv4qW7GMYYcEegzmFO1vyq+aFDPnB6doBbfLZ9ZCK8=
 github.com/wasmcloud/actor-tinygo v0.1.3/go.mod h1:YkUiUMwwoutfMg7Zp9wXpL5V2KLjTz96VdqT3CEwRq8=
-github.com/wasmcloud/interfaces/httpserver/tinygo v0.0.0-20221004165741-b9aa48b3b4c2 h1:IE3hyrnw+vvJdSzAJ1/X32rdh4uiJHhzXOK0DxMjH/4=
-github.com/wasmcloud/interfaces/httpserver/tinygo v0.0.0-20221004165741-b9aa48b3b4c2/go.mod h1:bq8RbFWT/3ItPG1XFBQxAIkrnPyHsvtUSB0yRFNtPxE=
 github.com/wasmcloud/tinygo-cbor v0.1.0 h1:n9X+GK5XB3P8TJK4pSzGahcHUmMONW5pZ5f9lTCzsX8=
 github.com/wasmcloud/tinygo-cbor v0.1.0/go.mod h1:j7SE4KKfYiyAnLSdEcK2bEyyLA38yCDrGi1wLU+YETQ=
 github.com/wasmcloud/tinygo-msgpack v0.1.4 h1:jhZ0txnn+WiOuUCpulDjC7nHHpAaaxElF+KgXXYu3DA=

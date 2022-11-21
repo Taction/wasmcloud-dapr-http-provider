@@ -213,7 +213,7 @@ func (r *Resolver) RemoveFromDiscovery(appID string) {
 // getConfig configuration from metadata, defaults are best suited for self-hosted mode.
 func getConfig(metadata nr.Metadata) (resolverConfig, error) {
 	var err error
-	resolverCfg := resolverConfig{}
+	resolverCfg := resolverConfig{DaprPortMetaKey: daprMeta}
 
 	cfg, err := parseConfig(metadata.Configuration)
 	if err != nil {

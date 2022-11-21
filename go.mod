@@ -76,3 +76,4 @@ require (
 )
 
 replace github.com/jordan-rash/wasmcloud-provider => github.com/taction/wasmcloud-provider v0.0.0-20221117060058-c4c7dbb96bac
+replace github.com/wasmcloud/interfaces/httpserver/tinygo => github.com/taction/interfaces/httpserver/tinygo v0.0.0-20221121060656-c8eb9f44fca4

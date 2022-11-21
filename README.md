@@ -12,7 +12,7 @@ You are supposed to know what dapr and wasmcloud is.
 #### steps
 ##### Run wasmcloud
 
-##### Run cousul
+##### Run consul
 You can start consul by running the following command for development purposes:
 
 

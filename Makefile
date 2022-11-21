@@ -1,4 +1,4 @@
-REVERSION ?= 2
+REVERSION ?= 3
 VERSION ?= 0.0.${REVERSION}
 
 
@@ -29,3 +29,5 @@ clean:
 bp: clean linux par push
 
 np: clean native mac-par push-mac
+
+nf: clean native mac-par
