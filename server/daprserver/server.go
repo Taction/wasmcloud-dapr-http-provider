@@ -141,13 +141,15 @@ func (a *Api) invokeMethodV1(ctx context.Context, r *invokev1.InvokeMethodReques
 
 	//var resp *http.Response
 
-	log.Infof("Sending request to actor with request: %+v", req)
+	log.Debugf("Sending request to actor with request: %+v", req)
 	body, err := encode.Encode(req)
 	if err != nil {
+		log.Warnf("Sending request to actor encode request err: %s", err)
 		return nil, err
 	}
 	res, err := a.tp.Send(actor.Message{Method: "HttpServer.HandleRequest", Arg: body})
 	if err != nil {
+		log.Warnf("Sending request to actor err: %s", err)
 		return nil, err
 	}
 	resp := httpserver.HttpResponse{}
@@ -155,6 +157,7 @@ func (a *Api) invokeMethodV1(ctx context.Context, r *invokev1.InvokeMethodReques
 	resp, err = httpserver.MDecodeHttpResponse(&b)
 	//err = msgpack.Unmarshal(res, &resp)
 	if err != nil {
+		log.Warnf("Sending request to actor decode resp err: %s", err)
 		return nil, err
 	}
 

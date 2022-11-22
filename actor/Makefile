@@ -1,12 +1,12 @@
-NAME    = echo
+NAME    = dapr-wasm
 VERSION = 0.1.0
-ACTOR   = echo
+ACTOR   = dapr-wasm
 
 CLAIMS   = --http_server
 MODULE   = build/${ACTOR}_s.wasm
 UNSIGNED = build/${ACTOR}.wasm
 #OCI_URL  = ghcr.io/${GH_USER}/${ACTOR}_s:${VERSION}
-OCI_URL  = harbor.oneitfarm.com/bifrost/echo-actor:${VERSION}
+OCI_URL  = index.docker.io/docker4zc/dapr-wasm-actor:${VERSION}
 # if OCI_URL is localhost (and/or with no tls enabled), add --insecure to PUSH_FLAGS
 PUSH_FLAGS =
 

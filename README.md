@@ -30,9 +30,12 @@ daprd -app-id=checkout -app-protocol=http --dapr-http-port=3500 -config=/{path t
 
 ##### Run wasmcloud 
 Run provider(this project), and wasmcloud actor, here I use the Echo.
-* run actor `wasmcloud.azurecr.io/echo:0.3.4`
-* run this provider, you can complie form source or use `docker.io/docker4zc/dapr-provider-go:0.0.2`(this image can only run on linux), you should config its configuration `{"resolver_address":"http://127.0.0.1:8500","external_address":"127.0.0.1"}`
+* run actor `docker.io/docker4zc/dapr-wasm-actor:0.1.0`
+  ![image-20221122164108329](https://image-1255620078.cos.ap-nanjing.myqcloud.com/image-20221122164108329.png)
+* run this provider, you can complie form source or use `docker.io/docker4zc/dapr-provider-go:0.0.4`(this image can only run on linux), you should config its configuration `{"resolver_address":"http://127.0.0.1:8500","external_address":"127.0.0.1"}`
+  ![image-20221122165710560](https://image-1255620078.cos.ap-nanjing.myqcloud.com/image-20221122165710560.png)
 * define a link between actor and provider, with values `address=0.0.0.0:8888,unique_id=order-processor`
+  ![image-20221122164343723](https://image-1255620078.cos.ap-nanjing.myqcloud.com/image-20221122164343723.png)
 
 ##### Run dapr app to call 
 We only need to start checkout app.
@@ -44,11 +47,33 @@ go build .
 ```
 ##### Result
 You are supposed to see the request info on the screen, as the echo actor will return the request info.
-```shell
-Order passed:  {"body":[123,34,111,114,100,101,114,73,100,34,58,49,125],"method":"POST","path":"orders","query_string":""}
+```
+Order passed:  {"Proxy": "by wasmcloud", "origin":{"orderId":1}}
+Order passed:  {"Proxy": "by wasmcloud", "origin":{"orderId":2}}
+Order passed:  {"Proxy": "by wasmcloud", "origin":{"orderId":3}}
+Order passed:  {"Proxy": "by wasmcloud", "origin":{"orderId":4}}
+Order passed:  {"Proxy": "by wasmcloud", "origin":{"orderId":5}}
+Order passed:  {"Proxy": "by wasmcloud", "origin":{"orderId":6}}
+Order passed:  {"Proxy": "by wasmcloud", "origin":{"orderId":7}}
+Order passed:  {"Proxy": "by wasmcloud", "origin":{"orderId":8}}
+Order passed:  {"Proxy": "by wasmcloud", "origin":{"orderId":9}}
+Order passed:  {"Proxy": "by wasmcloud", "origin":{"orderId":10}}
+```
+And on the order-processor screen, you can see the request info:
+```
+Order received :  {"Proxy": "by wasmcloud", "origin":{"orderId":1}}
+Order received :  {"Proxy": "by wasmcloud", "origin":{"orderId":2}}
+Order received :  {"Proxy": "by wasmcloud", "origin":{"orderId":3}}
+Order received :  {"Proxy": "by wasmcloud", "origin":{"orderId":4}}
+Order received :  {"Proxy": "by wasmcloud", "origin":{"orderId":5}}
+Order received :  {"Proxy": "by wasmcloud", "origin":{"orderId":6}}
+Order received :  {"Proxy": "by wasmcloud", "origin":{"orderId":7}}
+Order received :  {"Proxy": "by wasmcloud", "origin":{"orderId":8}}
+Order received :  {"Proxy": "by wasmcloud", "origin":{"orderId":9}}
+Order received :  {"Proxy": "by wasmcloud", "origin":{"orderId":10}}
 ```
 ### To Do
 
-Finish wasmcloud actor call dapr service.
+Add Mtls and more feature support
 
 

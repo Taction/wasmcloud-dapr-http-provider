@@ -23,8 +23,10 @@ import (
 	httpserver "github.com/wasmcloud/interfaces/httpserver/tinygo"
 	msgpack "github.com/wasmcloud/tinygo-msgpack"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/taction/http-provider-go/discovery"
 	"github.com/taction/http-provider-go/discovery/consul"
@@ -43,13 +45,12 @@ const (
 var log = logger.NewLogger("wasmcloud.httpprovider")
 
 type HttpServerProvider struct {
-	l              sync.Mutex
-	lock           sync.RWMutex
-	connectionPool *connectionPool
-	ExternalHost   string
-	Actors         map[string]server.HttpServerInterface
-	Provider       provider.WasmcloudProvider
-	Resolver       discovery.Discover // todo change ResolveID to `ResolveID(req ResolveRequest) ([]string, error)`
+	l            sync.Mutex
+	remoteConns  *RemoteConnectionPool
+	ExternalHost string
+	Actors       map[string]server.HttpServerInterface
+	Provider     provider.WasmcloudProvider
+	Resolver     discovery.Discover // todo change ResolveID to `ResolveID(req ResolveRequest) ([]string, error)`
 }
 type remoteApp struct {
 	id        string
@@ -59,8 +60,8 @@ type remoteApp struct {
 
 func NewHttpServerProvider() *HttpServerProvider {
 	return &HttpServerProvider{
-		Actors:         make(map[string]server.HttpServerInterface),
-		connectionPool: newConnectionPool(),
+		Actors:      make(map[string]server.HttpServerInterface),
+		remoteConns: NewRemoteConnectionPool(),
 	}
 }
 
@@ -95,7 +96,7 @@ func (p *HttpServerProvider) Run() (err error) {
 	go func() {
 		//Wait for valid requests
 		for actorRequest := range p.Provider.ProviderAction {
-			go p.evaluateRequest(actorRequest)
+			p.evaluateRequest(actorRequest)
 		}
 	}()
 
@@ -155,9 +156,14 @@ func (p *HttpServerProvider) daprRequest(actorRequest provider.ProviderAction) (
 		dec := msgpack.NewDecoder(actorRequest.Msg)
 		req, err := httpserver.MDecodeHttpRequest(&dec)
 		if err != nil {
+			log.Warnf("Receive actor request decode err: %s", err)
 			return nil, err
 		}
 		pres, err := p.callDaprRemote(context.TODO(), req)
+		if err != nil {
+			log.Warnf("Receive actor request decode call dapr remote err: %s", err)
+			return nil, err
+		}
 		var sizer msgpack.Sizer
 		sizeEnc := &sizer
 		pres.MEncode(sizeEnc)
@@ -205,10 +211,18 @@ func (g *HttpServerProvider) callDaprRemote(ctx context.Context, r httpserver.Ht
 	req.WithMetadata(mh)
 
 	a, err := g.getRemoteApp(appId)
-	conn, err := g.GetGRPCConnection(context.TODO(), a.address)
+	conn, teardown, err := g.GetGRPCConnection(context.TODO(), a.address)
 	if err != nil {
+		log.Warnf("Call dapr remote get conn err: %s", err)
+		code := status.Code(err)
+		if code == codes.Unavailable || code == codes.Unauthenticated {
+			// Destroy the connection and force a re-connection on the next attempt
+			teardown(true)
+		}
+		teardown(false)
 		return nil, err
 	}
+	teardown(false)
 	clientV1 := internalv1pb.NewServiceInvocationClient(conn)
 	var opts []grpc.CallOption
 	opts = append(opts, grpc.MaxCallRecvMsgSize(4*1024*1024), grpc.MaxCallSendMsgSize(4*1024*1024))
@@ -238,6 +252,9 @@ func (g *HttpServerProvider) callDaprRemote(ctx context.Context, r httpserver.Ht
 	res.StatusCode = uint16(statusCode)
 	return &res, nil
 }
+func nopTeardown(destroy bool) {
+	// Nop
+}
 
 func (d *HttpServerProvider) getRemoteApp(appID string) (remoteApp, error) {
 	//id, namespace, err := d.requestAppIDAndNamespace(appID)
@@ -257,36 +274,49 @@ func (d *HttpServerProvider) getRemoteApp(appID string) (remoteApp, error) {
 	}, nil
 }
 
-func (g *HttpServerProvider) GetGRPCConnection(parentCtx context.Context, address string, customOpts ...grpc.DialOption) (*grpc.ClientConn, error) {
-	g.lock.RLock()
-	if conn, ok := g.connectionPool.Share(address); ok {
-		g.lock.RUnlock()
-		return conn, nil
+func (g *HttpServerProvider) GetGRPCConnection(parentCtx context.Context, address string, customOpts ...grpc.DialOption) (conn *grpc.ClientConn, teardown func(destroy bool), err error) {
+	// Load or create a connection
+	var connI grpc.ClientConnInterface
+	connI, err = g.remoteConns.Get(address, func() (grpc.ClientConnInterface, error) {
+		log.Infof("Creating new remote conn to address: %s", address)
+		return g.connectRemote(parentCtx, address, customOpts...)
+	})
+	if err != nil {
+		log.Errorf("Creating new remote conn to address: %s failed %s", address, err)
+		return nil, nopTeardown, err
 	}
-	g.lock.RUnlock()
+	conn = connI.(*grpc.ClientConn)
+	return conn, g.connTeardownFactory(address, conn), nil
+}
 
-	g.lock.RLock()
-	// read the value once again, as a concurrent writer could create it
-	if conn, ok := g.connectionPool.Share(address); ok {
-		g.lock.RUnlock()
-		return conn, nil
-	}
-	g.lock.RUnlock()
+func (g *HttpServerProvider) connectRemote(
+	parentCtx context.Context,
+	address string,
+	customOpts ...grpc.DialOption,
+) (conn *grpc.ClientConn, err error) {
 	opts := []grpc.DialOption{
 		grpc.WithDefaultServiceConfig(grpcServiceConfig),
 		grpc.WithTransportCredentials(insecure.NewCredentials()), // todo fix tls or mtls usage
 	}
 	dialPrefix := GetDialAddressPrefix(modes.StandaloneMode) // todo define in config
 	ctx, cancel := context.WithTimeout(parentCtx, dialTimeout)
-	conn, err := grpc.DialContext(ctx, dialPrefix+address, opts...)
+	conn, err = grpc.DialContext(ctx, dialPrefix+address, opts...)
 	cancel()
 	if err != nil {
 		return nil, err
 	}
-	g.lock.Lock()
-	g.connectionPool.Register(address, conn)
-	g.lock.Unlock()
+
 	return conn, nil
+}
+
+func (g *HttpServerProvider) connTeardownFactory(address string, conn *grpc.ClientConn) func(destroy bool) {
+	return func(destroy bool) {
+		if destroy {
+			g.remoteConns.Destroy(address, conn)
+		} else {
+			g.remoteConns.Release(address, conn)
+		}
+	}
 }
 
 // GetDialAddressPrefix returns a dial prefix for a gRPC client connections
