@@ -15,7 +15,6 @@ You are supposed to know what dapr and wasmcloud is.
 ##### Run consul
 You can start consul by running the following command for development purposes:
 
-
 ```shell
 consul agent -dev -bind 127.0.0.1 -ui
 ```
@@ -23,18 +22,28 @@ consul agent -dev -bind 127.0.0.1 -ui
 ##### Run dapr example
 I use the [official service invocation example](https://docs.dapr.io/getting-started/quickstarts/serviceinvocation-quickstart/) form dapr
 
+build and run order-processor app and its daprd sidecar
+```shell
+daprd -app-id=order-processor -app-port=6001 -app-protocol=http --dapr-grpc-port=50002 --metrics-port=9999 --dapr-http-port=3501  -config=/{path to this project}/test/config/component.yaml
+
+# cd to the quickstarts/service_invocation/go/http/order-processor directory
+go run app.go
+# or build and run the binary
+```
+
+Run checkout's daprd sidecar
 ```shell
 daprd -app-id=checkout -app-protocol=http --dapr-http-port=3500 -config=/{path to this project}/test/config/component.yaml
 ```
 
 
-##### Run wasmcloud 
+##### Run wasmcloud Actor
 Run provider(this project), and wasmcloud actor, here I use the Echo.
 * run actor `docker.io/docker4zc/dapr-wasm-actor:0.1.0`
   ![image-20221122164108329](https://image-1255620078.cos.ap-nanjing.myqcloud.com/image-20221122164108329.png)
 * run this provider, you can complie form source or use `docker.io/docker4zc/dapr-provider-go:0.0.4`(this image can only run on linux), you should config its configuration `{"resolver_address":"http://127.0.0.1:8500","external_address":"127.0.0.1"}`
   ![image-20221122165710560](https://image-1255620078.cos.ap-nanjing.myqcloud.com/image-20221122165710560.png)
-* define a link between actor and provider, with values `address=0.0.0.0:8888,unique_id=order-processor`
+* define a link between actor and provider, with values `address=0.0.0.0:8888,unique_id=wasm-processor`
   ![image-20221122164343723](https://image-1255620078.cos.ap-nanjing.myqcloud.com/image-20221122164343723.png)
 
 ##### Run dapr app to call 
